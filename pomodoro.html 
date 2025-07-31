@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>番茄时钟 · Pomodoro 2025</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>
+/* ===== 全局变量 ===== */
+:root{
+  --radius:20px;
+  --blur:12px;
+  --shadow-light:0 8px 32px rgba(255,255,255,.37);
+  --shadow-dark:0 8px 32px rgba(0,0,0,.37);
+  --pink:#ff6b81;
+  --green:#1dd1a1;
+}
+body,html{margin:0;height:100%;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif}
+body{display:flex;align-items:center;justify-content:center;background:#f5f5f7;transition:background .3s}
+body.dark{background:#121212}
+
+/* ===== 粒子背景 ===== */
+#particles-js{position:absolute;top:0;left:0;width:100%;height:100%;z-index:-1}
+
+/* ===== 主卡片 ===== */
+.card{
+  width:clamp(320px,90vw,420px);
+  padding:40px 35px;
+  border-radius:var(--radius);
+  background:rgba(255,255,255,.25);
+  backdrop-filter:blur(var(--blur));
+  box-shadow:var(--shadow-light);
+  text-align:center;
+  transition:transform .3s;
+}
+body.dark .card{background:rgba(30,30,30,.25);box-shadow:var(--shadow-dark)}
+.card:hover{transform:translateY(-6px)}
+
+/* ===== 标题 ===== */
+h1{margin:0 0 25px;font-weight:600;font-size:26px;color:#333}
+body.dark h1{color:#eee}
+
+/* ===== 计时圆环 ===== */
+.ring{position:relative;width:220px;height:220px;margin:0 auto 25px}
+svg{width:100%;height:100%;transform:rotate(-90deg)}
+circle{fill:none;stroke-width:14;stroke-linecap:round}
+.bg{stroke:#e0e0e0}
+.progress{stroke:var(--pink);transition:stroke-dashoffset .2s}
+body.dark .progress{stroke:var(--green)}
+
+/* ===== 时间文本 ===== */
+.time{font-size:48px;font-weight:700;letter-spacing:2px;color:#333;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%)}
+body.dark .time{color:#eee}
+
+/* ===== 控制按钮 ===== */
+.controls{display:flex;justify-content:center;gap:16px;margin-bottom:25px}
+button{
+  border:none;
+  padding:12px 28px;
+  border-radius:50px;
+  font-size:16px;
+  cursor:pointer;
+  transition:.3s;
+  background:var(--pink);
+  color:#fff;
+}
+button:hover{opacity:.85}
+body.dark button{background:var(--green)}
+
+/* ===== 任务列表 ===== */
+.tasks{max-height:180px;overflow-y:auto}
+.tasks::-webkit-scrollbar{width:6px}
+.tasks::-webkit-scrollbar-thumb{background:rgba(0,0,0,.15);border-radius:3px}
+.task{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:8px 12px;
+  margin-bottom:8px;
+  border-radius:var(--radius);
+  background:rgba(0,0,0,.05);
+}
+body.dark .task{background:rgba(255,255,255,.05)}
+.task span{flex:1;text-align:left}
+.task button{background:#ff4757;font-size:12px;padding:4px 10px}
+input[type=text]{
+  flex:1;
+  border:none;
+  outline:none;
+  padding:10px 14px;
+  border-radius:50px;
+  background:rgba(0,0,0,.05);
+}
+body.dark input{background:rgba(255,255,255,.1);color:#eee}
+
+/* ===== 设置面板 ===== */
+.settings{
+  margin-top:20px;
+  display:flex;
+  justify-content:space-between;
+  font-size:14px;
+  color:#666
+}
+body.dark .settings{color:#aaa}
+label{cursor:pointer}
+</style>
+</head>
+<body>
+
+<!-- 粒子背景 -->
+<div id="particles-js"></div>
+
+<!-- 主卡片 -->
+<div class="card">
+  <h1>番茄时钟</h1>
+
+  <!-- 圆环进度 -->
+  <div class="ring">
+    <svg>
+      <circle class="bg" cx="110" cy="110" r="100"/>
+      <circle class="progress" cx="110" cy="110" r="100" stroke-dasharray="628.32" stroke-dashoffset="628.32"/>
+    </svg>
+    <div class="time">25:00</div>
+  </div>
+
+  <!-- 控制按钮 -->
+  <div class="controls">
+    <button id="startBtn">开始</button>
+    <button id="resetBtn">重置</button>
+    <button id="switchBtn">切换模式</button>
+  </div>
+
+  <!-- 任务列表 -->
+  <div class="tasks" id="taskList"></div>
+  <div style="display:flex;margin-top:12px">
+    <input id="taskInput" placeholder="添加新任务…" onkeydown="if(event.key==='Enter')addTask()"/>
+    <button onclick="addTask()">+</button>
+  </div>
+
+  <!-- 设置 -->
+  <div class="settings">
+    <label>
+      <input type="checkbox" id="soundToggle" checked />
+      声音提醒
+    </label>
+    <label>
+      <input type="checkbox" id="darkToggle" />
+      深色主题
+    </label>
+  </div>
+</div>
+
+<!-- 粒子JS -->
+<script src="https://cdn.jsdelivr.net/npm/particles.js@2.0.0/particles.min.js"></script>
+<script>
+/* ===== 计时器逻辑 ===== */
+let total=25*60,left=total,interval=null,isWork=true;
+const timeEl=document.querySelector('.time');
+const ring=document.querySelector('.progress');
+const startBtn=document.getElementById('startBtn');
+const resetBtn=document.getElementById('resetBtn');
+const switchBtn=document.getElementById('switchBtn');
+const audio=new Audio('https://assets.mixkit.co/sfx/preview/mixkit-positive-notification-951.mp3');
+
+function fmt(s){return`${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`}
+function updateRing(){ring.style.strokeDashoffset=628.32*(1-left/total)}
+function tick(){
+  if(--left<0){
+    if(document.getElementById('soundToggle').checked)audio.play();
+    isWork=!isWork;
+    total=isWork?25*60:5*60;
+    left=total;
+    notify(isWork?'工作时间到了！':'休息一下吧~');
+  }
+  timeEl.textContent=fmt(left);
+  updateRing();
+}
+function notify(msg){
+  if('Notification' in window && Notification.permission==='granted')new Notification(msg);
+}
+startBtn.onclick=()=>{
+  if(interval){clearInterval(interval);interval=null;startBtn.textContent='继续'}
+  else{interval=setInterval(tick,1000);startBtn.textContent='暂停'}
+}
+resetBtn.onclick=()=>{
+  clearInterval(interval);interval=null;
+  total=isWork?25*60:5*60;left=total;
+  timeEl.textContent=fmt(left);updateRing();
+  startBtn.textContent='开始';
+}
+switchBtn.onclick=()=>{
+  isWork=!isWork;
+  total=isWork?25*60:5*60;left=total;
+  timeEl.textContent=fmt(left);updateRing();
+  startBtn.textContent='开始';
+  clearInterval(interval);interval=null;
+}
+updateRing();
+
+/* ===== 任务列表 ===== */
+const taskInput=document.getElementById('taskInput');
+const taskList=document.getElementById('taskList');
+let tasks=JSON.parse(localStorage.getItem('pomotasks')||'[]');
+function saveTasks(){localStorage.setItem('pomotasks',JSON.stringify(tasks))}
+function renderTasks(){
+  taskList.innerHTML='';
+  tasks.forEach((t,i)=>{
+    const div=document.createElement('div');div.className='task';
+    div.innerHTML=`<span>${t}</span><button onclick="delTask(${i})">×</button>`;
+    taskList.appendChild(div);
+  });
+}
+function addTask(){
+  const v=taskInput.value.trim();
+  if(!v)return;
+  tasks.push(v);saveTasks();renderTasks();
+  taskInput.value='';
+}
+function delTask(i){tasks.splice(i,1);saveTasks();renderTasks()}
+renderTasks();
+
+/* ===== 主题与通知 ===== */
+const darkToggle=document.getElementById('darkToggle');
+darkToggle.checked=localStorage.getItem('dark')==='true';
+function toggleDark(){
+  document.body.classList.toggle('dark',darkToggle.checked);
+  localStorage.setItem('dark',darkToggle.checked);
+}
+darkToggle.onchange=toggleDark;
+toggleDark();
+if('Notification' in window && Notification.permission!=='denied')Notification.requestPermission();
+
+/* ===== 粒子背景配置 ===== */
+particlesJS('particles-js',{
+  particles:{number:{value:60},color:{value:'#ff6b81'},shape:{type:'circle'},
+  opacity:{value:.3},size:{value:3},
+  move:{speed:1.5,outModes:'bounce'}},
+  interactivity:{events:{onhover:{enable:!0,mode:'repulse'}}},
+  detectRetina:!0
+});
+</script>
+</body>
+</html>
